@@ -18,6 +18,8 @@ type server struct {
 
 var secretKey = []byte("secret-key")
 var registeredUsers = map[string]string{}
+var loggedinUsers = []string{}
+
 var currentUsers = []string{}
 
 func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
@@ -26,7 +28,6 @@ func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginRespo
 	log.Printf("Received Login request: %v", in)
 
 	userExist := isUserRegistered(in.Username)
-	var tokenString string
 	if userExist {
 
 		if registeredUsers[in.Username] != in.Password {
@@ -36,6 +37,8 @@ func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginRespo
 
 		} else {
 			tokenString, err := CreateToken(in.Username)
+			loggedinUsers = append(loggedinUsers, in.Username)
+			fmt.Println("loggedinUsers", loggedinUsers)
 
 			if err != nil {
 				fmt.Errorf("Error generating token", err)
@@ -46,7 +49,30 @@ func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginRespo
 		}
 
 	}
-	return &pb.LoginResponse{Token: tokenString}, nil
+	return nil, nil
+
+}
+
+func (s *server) LogOut(ctx context.Context, in *pb.LogOutRequest) (*pb.LogOutResponse, error) {
+	// Simulate some processing time
+
+	log.Printf("Received Logout request: %v", in)
+
+	tokenString := in.AuthCode
+	if tokenString == "" {
+		fmt.Print("Missing authorization code")
+		return nil, nil
+	}
+	err := verifyToken(tokenString)
+	if err != nil {
+		fmt.Print("Invalid token")
+		return nil, nil
+	}
+
+	removeFromLoggedIn(in.Username)
+	loggedinUsers = append(loggedinUsers, in.Username)
+
+	return &pb.LogOutResponse{Status: "Logged Out"}, nil
 
 }
 
@@ -85,6 +111,14 @@ func isUserRegistered(username string) bool {
 	return exists
 }
 
+func removeFromLoggedIn(username string) {
+	for i, u := range loggedinUsers {
+		if u == username {
+			loggedinUsers = append(loggedinUsers[:i], loggedinUsers[i+1:]...)
+		}
+	}
+}
+
 func CreateToken(username string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
@@ -98,4 +132,20 @@ func CreateToken(username string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+func verifyToken(tokenString string) error {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if !token.Valid {
+		return fmt.Errorf("invalid token")
+	}
+
+	return nil
 }
