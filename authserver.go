@@ -20,8 +20,21 @@ var secretKey = []byte("secret-key")
 var registeredUsers = map[string]string{}
 var loggedinUsers = []string{}
 
-var currentUsers = []string{}
+func main() {
 
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatalf("failed to listen on port 50051: %v", err)
+	}
+
+	s := grpc.NewServer()
+	pb.RegisterStreakAiServiceServer(s, &server{})
+	log.Printf("gRPC server listening at %v", lis.Addr())
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+
+}
 func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
 	// Simulate some processing time
 
@@ -50,7 +63,6 @@ func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginRespo
 
 	}
 	return nil, nil
-
 }
 
 func (s *server) LogOut(ctx context.Context, in *pb.LogOutRequest) (*pb.LogOutResponse, error) {
@@ -63,7 +75,7 @@ func (s *server) LogOut(ctx context.Context, in *pb.LogOutRequest) (*pb.LogOutRe
 		fmt.Print("Missing authorization code")
 		return nil, nil
 	}
-	err := verifyToken(tokenString)
+	_, err := verifyToken(tokenString)
 	if err != nil {
 		fmt.Print("Invalid token")
 		return nil, nil
@@ -73,7 +85,6 @@ func (s *server) LogOut(ctx context.Context, in *pb.LogOutRequest) (*pb.LogOutRe
 	loggedinUsers = append(loggedinUsers, in.Username)
 
 	return &pb.LogOutResponse{Status: "Logged Out"}, nil
-
 }
 
 func (s *server) Register(ctx context.Context, in *pb.RegisterRequest) (*pb.RegisterResponse, error) {
@@ -90,20 +101,16 @@ func (s *server) Register(ctx context.Context, in *pb.RegisterRequest) (*pb.Regi
 	return &pb.RegisterResponse{Status: "success"}, nil
 }
 
-func main() {
+func (s *server) CheckAuthorized(ctx context.Context, in *pb.CheckAuthorizedReq) (*pb.CheckAuthorizedRes, error) {
+	log.Printf("Received authorization check request: %v", in)
 
-	lis, err := net.Listen("tcp", ":50051")
+	username, err := verifyToken(in.AuthCode)
 	if err != nil {
-		log.Fatalf("failed to listen on port 50051: %v", err)
+		fmt.Print("Invalid token")
+		return &pb.CheckAuthorizedRes{Username: "", Authorized: false}, err
 	}
 
-	s := grpc.NewServer()
-	pb.RegisterStreakAiServiceServer(s, &server{})
-	log.Printf("gRPC server listening at %v", lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
-	}
-
+	return &pb.CheckAuthorizedRes{Username: username, Authorized: true}, nil
 }
 
 func isUserRegistered(username string) bool {
@@ -134,18 +141,28 @@ func CreateToken(username string) (string, error) {
 	return tokenString, nil
 }
 
-func verifyToken(tokenString string) error {
+func verifyToken(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return secretKey, nil
 	})
 
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if !token.Valid {
-		return fmt.Errorf("invalid token")
+		return "", fmt.Errorf("invalid token")
 	}
 
-	return nil
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("error parsing claims")
+	}
+
+	username, ok := claims["username"].(string)
+	if !ok {
+		return "", fmt.Errorf("username claim not found or not a string")
+	}
+
+	return username, nil
 }
