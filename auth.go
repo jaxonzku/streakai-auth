@@ -4,37 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
 	pb "streakauth/grpc"
 	"time"
 
 	"github.com/golang-jwt/jwt"
-	"google.golang.org/grpc"
 )
 
-type server struct {
-	pb.UnimplementedStreakAiServiceServer
-}
-
-var secretKey = []byte("secret-key")
-var registeredUsers = map[string]string{}
-var loggedinUsers = []string{}
-
-func main() {
-
-	lis, err := net.Listen("tcp", ":50051")
-	if err != nil {
-		log.Fatalf("failed to listen on port 50051: %v", err)
-	}
-
-	s := grpc.NewServer()
-	pb.RegisterStreakAiServiceServer(s, &server{})
-	log.Printf("gRPC server listening at %v", lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
-	}
-
-}
 func (s *server) Login(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
 	// Simulate some processing time
 
@@ -99,31 +74,6 @@ func (s *server) Register(ctx context.Context, in *pb.RegisterRequest) (*pb.Regi
 	fmt.Println("registeredUsers", registeredUsers)
 
 	return &pb.RegisterResponse{Status: "success"}, nil
-}
-
-func (s *server) CheckAuthorized(ctx context.Context, in *pb.CheckAuthorizedReq) (*pb.CheckAuthorizedRes, error) {
-	log.Printf("Received authorization check request: %v", in)
-
-	username, err := verifyToken(in.AuthCode)
-	if err != nil {
-		fmt.Print("Invalid token")
-		return &pb.CheckAuthorizedRes{Username: "", Authorized: false}, err
-	}
-
-	return &pb.CheckAuthorizedRes{Username: username, Authorized: true}, nil
-}
-
-func isUserRegistered(username string) bool {
-	_, exists := registeredUsers[username]
-	return exists
-}
-
-func removeFromLoggedIn(username string) {
-	for i, u := range loggedinUsers {
-		if u == username {
-			loggedinUsers = append(loggedinUsers[:i], loggedinUsers[i+1:]...)
-		}
-	}
 }
 
 func CreateToken(username string) (string, error) {
